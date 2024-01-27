@@ -64,10 +64,10 @@ namespace Kinematics {
     private:
         //  Config items Using geometry names from the published kinematics rather than typical Fluid Style
         // To make the math easier to compare with the code
-        float rf = 70.0;  // The length of the crank arm on the motor
-        float f  = 179.437;
-        float re = 133.50;
-        float e  = 86.603;
+        float of_rf = 70.0;  // The length of the crank arm on the motor
+        float of_f  = 179.437;
+        float of_re = 133.50;
+        float of_e  = 86.603;
 
         float _kinematic_segment_len_mm = 1.0;  // the maximun segment length the move is broken into
         bool  _softLimits               = false;

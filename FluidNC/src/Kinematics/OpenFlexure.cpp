@@ -60,19 +60,19 @@ namespace Kinematics {
     const float tan30  = 1.0 / sqrt3;
 
     // the geometry of the delta
-    float rf;  // radius of the fixed side (length of motor cranks)
-    float re;  // radius of end effector side (length of linkages)
-    float f;   // sized of fixed side triangel
-    float e;   // size of end effector side triangle
+    float of_rf;  // radius of the fixed side (length of motor cranks)
+    float of_re;  // radius of end effector side (length of linkages)
+    float of_f;   // sized of fixed side triangel
+    float of_e;   // size of end effector side triangle
 
     static float last_angle[MAX_N_AXIS]     = { 0.0 };  // A place to save the previous motor angles for distance/feed rate calcs
     static float last_cartesian[MAX_N_AXIS] = { 0.0 };  // A place to save the previous motor angles for distance/feed rate calcs
 
     void OpenFlexure::group(Configuration::HandlerBase& handler) {
-        handler.item("crank_mm", rf, 1.0, 500.0);
-        handler.item("base_triangle_mm", f, 20.0, 500.0);
-        handler.item("linkage_mm", re, 20.0, 500.0);
-        handler.item("end_effector_triangle_mm", e, 20.0, 500.0);
+        handler.item("crank_mm", of_rf, 1.0, 500.0);
+        handler.item("base_triangle_mm", of_f, 20.0, 500.0);
+        handler.item("linkage_mm", of_re, 20.0, 500.0);
+        handler.item("end_effector_triangle_mm", of_e, 20.0, 500.0);
         handler.item("kinematic_segment_len_mm", _kinematic_segment_len_mm, 0.05, 20.0);  //
         handler.item("homing_mpos_radians", _homing_mpos);
         handler.item("soft_limits", _softLimits);
@@ -240,20 +240,20 @@ namespace Kinematics {
 
     void OpenFlexure::motors_to_cartesian(float* cartesian, float* motors, int n_axis) {
         //log_debug("motors_to_cartesian motors: (" << motors[0] << "," << motors[1] << "," << motors[2] << ")");
-        //log_info("motors_to_cartesian rf:" << rf << " re:" << re << " f:" << f << " e:" << e);
+        //log_info("motors_to_cartesian of_rf:" << of_rf << " of_re:" << of_re << " of_f:" << of_f << " of_e:" << of_e);
 
-        float t = (f - e) * tan30 / 2;
+        float t = (of_f - of_e) * tan30 / 2;
 
-        float y1 = -(t + rf * cos(motors[0]));
-        float z1 = -rf * sin(motors[0]);
+        float y1 = -(t + of_rf * cos(motors[0]));
+        float z1 = -of_rf * sin(motors[0]);
 
-        float y2 = (t + rf * cos(motors[1])) * sin30;
+        float y2 = (t + of_rf * cos(motors[1])) * sin30;
         float x2 = y2 * tan60;
-        float z2 = -rf * sin(motors[1]);
+        float z2 = -of_rf * sin(motors[1]);
 
-        float y3 = (t + rf * cos(motors[2])) * sin30;
+        float y3 = (t + of_rf * cos(motors[2])) * sin30;
         float x3 = -y3 * tan60;
-        float z3 = -rf * sin(motors[2]);
+        float z3 = -of_rf * sin(motors[2]);
 
         float dnm = (y2 - y1) * x3 - (y3 - y1) * x2;
 
@@ -272,7 +272,7 @@ namespace Kinematics {
         // a*z^2 + b*z + c = 0
         float a = a1 * a1 + a2 * a2 + dnm * dnm;
         float b = 2 * (a1 * b1 + a2 * (b2 - y1 * dnm) - z1 * dnm * dnm);
-        float c = (b2 - y1 * dnm) * (b2 - y1 * dnm) + b1 * b1 + dnm * dnm * (z1 * z1 - re * re);
+        float c = (b2 - y1 * dnm) * (b2 - y1 * dnm) + b1 * b1 + dnm * dnm * (z1 * z1 - of_re * of_re);
 
         // discriminant
         float d = b * b - (float)4.0 * a * c;
@@ -307,13 +307,13 @@ namespace Kinematics {
 
     // helper functions, calculates angle theta1 (for YZ-pane)
     bool OpenFlexure::delta_calcAngleYZ(float x0, float y0, float z0, float& theta) {
-        float y1 = -0.5 * 0.57735 * f;  // f/2 * tg 30
-        y0 -= 0.5 * 0.57735 * e;        // shift center to edge
+        float y1 = -0.5 * 0.57735 * of_f;  // of_f/2 * tg 30
+        y0 -= 0.5 * 0.57735 * of_e;        // shift center to edge
         // z = a + b*y
-        float a = (x0 * x0 + y0 * y0 + z0 * z0 + rf * rf - re * re - y1 * y1) / (2 * z0);
+        float a = (x0 * x0 + y0 * y0 + z0 * z0 + of_rf * of_rf - of_re * of_re - y1 * y1) / (2 * z0);
         float b = (y1 - y0) / z0;
         // discriminant
-        float d = -(a + b * y1) * (a + b * y1) + rf * (b * b * rf + rf);
+        float d = -(a + b * y1) * (a + b * y1) + of_rf * (b * b * of_rf + of_rf);
         if (d < 0) {
             //log_warn("Kinematics: Target unreachable");
             return false;
