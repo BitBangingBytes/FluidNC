@@ -7,6 +7,12 @@ git clone https://github.com/BitBangingBytes/FluidNC.git
 git checkout OpenFlexure
 ```
 There is a sample Openflexure config file that uses an ESP32 Wifi module (ESP8266) with the stock motors. 
+
+If you want to incorporate these kinematics into another build of FluidNC just copy these files:
+```
+/FluidNC/src/Kinematics/OpenFlexure.h
+/FluidNC/src/Kinematics/OpenFlexure.cpp
+```
 Good luck!
 
 ## Introduction
