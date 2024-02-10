@@ -68,17 +68,22 @@ namespace Kinematics {
     static float last_angle[MAX_N_AXIS]     = { 0.0 };  // A place to save the previous motor angles for distance/feed rate calcs
     static float last_cartesian[MAX_N_AXIS] = { 0.0 };  // A place to save the previous motor angles for distance/feed rate calcs
 
+    // Scale values are in relation to Z axis. First set step size (steps per mm) of Z axis so it moves 1mm 
+    // Then observe X/Y axis and adjust scaling values until they also move 1mm.
+    // eg. Z moves 1mm, but X moves 1.5mm and Y moves 2mm when told to only move one 1mm in any direction.
+    // Set X_Scale to 1.5 and Y_Scale to 2
+
     void OpenFlexure::group(Configuration::HandlerBase& handler) {
         handler.item("max_z_mm", _max_z, -10.0, 10.0); 
-        handler.item("Backlash_X", _backlash_x);
-        handler.item("Backlash_Y", _backlash_y);
-        handler.item("Backlash_Z", _backlash_z);
-        handler.item("X_Scale", _scale_x);
-        handler.item("Y_Scale", _scale_y);
-        handler.item("Flex_A", _flex_a);
+        // handler.item("Backlash_X", _backlash_x);  // Not implemented yet
+        // handler.item("Backlash_Y", _backlash_y);
+        // handler.item("Backlash_Z", _backlash_z);
+        handler.item("X_Scale", _scale_x);  // Scale X movements
+        handler.item("Y_Scale", _scale_y);  // Scale Y movements
+        handler.item("Flex_A", _flex_a);  // Values from 
         handler.item("Flex_B", _flex_b);
         handler.item("Flex_H", _flex_h);
-        handler.item("Camera_Angle", _camera_angle, 0.0, 360.0);
+        // handler.item("Camera_Angle", _camera_angle, 0.0, 360.0);  // Not implemented yet
     }
 
     void OpenFlexure::init() {
