@@ -64,19 +64,34 @@ namespace Kinematics {
     private:
         //  Config items Using geometry names from the published kinematics rather than typical Fluid Style
         // To make the math easier to compare with the code
-        float of_rf = 70.0;  // The length of the crank arm on the motor
-        float of_f  = 179.437;
-        float of_re = 133.50;
-        float of_e  = 86.603;
+        // float of_rf = 70.0;  // The length of the crank arm on the motor
+        // float of_f  = 179.437;
+        // float of_re = 133.50;
+        // float of_e  = 86.603;
 
         float _kinematic_segment_len_mm = 1.0;  // the maximun segment length the move is broken into
         bool  _softLimits               = false;
         float _homing_mpos              = 0.0;
         float _max_z                    = 0.0;
-        bool  _use_servos               = true;  // servo use a special homing
+        // bool  _use_servos               = true;  // servo use a special homing
+        int _backlash_x                 = 0;
+        int _backlash_y                 = 0;
+        int _backlash_z                 = 0;
+        float _scale_x                  = 1.0;
+        float _scale_y                  = 1.0;
+        int _flex_a                     = 50;
+        int _flex_b                     = 50;
+        int _flex_h                     = 80;
+        float _camera_angle               = 0.0;
 
-        bool  delta_calcAngleYZ(float x0, float y0, float z0, float& theta);
+        // bool  delta_calcAngleYZ(float x0, float y0, float z0, float& theta);
         float three_axis_dist(float* point1, float* point2);
+
+        double ttd[3][3];
+        double tfd[3][3];
+        double x_fac = 0.0;
+        double y_fac = 0.0;
+        double z_fac = 0.0;
 
     protected:
     };

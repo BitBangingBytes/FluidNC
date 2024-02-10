@@ -59,25 +59,26 @@ namespace Kinematics {
     const float sin30  = 0.5;
     const float tan30  = 1.0 / sqrt3;
 
-    // the geometry of the delta
-    float of_rf;  // radius of the fixed side (length of motor cranks)
-    float of_re;  // radius of end effector side (length of linkages)
-    float of_f;   // sized of fixed side triangel
-    float of_e;   // size of end effector side triangle
+    double x_fac;
+    double y_fac;
+    double z_fac;
+    double ttd[3][3];
+    double tfd[3][3];
 
     static float last_angle[MAX_N_AXIS]     = { 0.0 };  // A place to save the previous motor angles for distance/feed rate calcs
     static float last_cartesian[MAX_N_AXIS] = { 0.0 };  // A place to save the previous motor angles for distance/feed rate calcs
 
     void OpenFlexure::group(Configuration::HandlerBase& handler) {
-        handler.item("crank_mm", of_rf, 1.0, 500.0);
-        handler.item("base_triangle_mm", of_f, 20.0, 500.0);
-        handler.item("linkage_mm", of_re, 20.0, 500.0);
-        handler.item("end_effector_triangle_mm", of_e, 20.0, 500.0);
-        handler.item("kinematic_segment_len_mm", _kinematic_segment_len_mm, 0.05, 20.0);  //
-        handler.item("homing_mpos_radians", _homing_mpos);
-        handler.item("soft_limits", _softLimits);
-        handler.item("max_z_mm", _max_z, -10000.0, 0.0);  //
-        handler.item("use_servos", _use_servos);
+        handler.item("max_z_mm", _max_z, -10.0, 10.0); 
+        handler.item("Backlash_X", _backlash_x);
+        handler.item("Backlash_Y", _backlash_y);
+        handler.item("Backlash_Z", _backlash_z);
+        handler.item("X_Scale", _scale_x);
+        handler.item("Y_Scale", _scale_y);
+        handler.item("Flex_A", _flex_a);
+        handler.item("Flex_B", _flex_b);
+        handler.item("Flex_H", _flex_h);
+        handler.item("Camera_Angle", _camera_angle, 0.0, 360.0);
     }
 
     void OpenFlexure::init() {
@@ -94,6 +95,50 @@ namespace Kinematics {
                 break;
             }
         }
+        /* Python code from OpenFlexure SangaDeltaStage
+        x_fac: float = -1 * np.multiply( np.divide(2, np.sqrt(3)), np.divide(self.flex_b, self.flex_h) )
+        y_fac: float = -1 * np.divide(self.flex_b, self.flex_h)
+        z_fac: float = np.multiply(np.divide(1, 3), np.divide(self.flex_b, self.flex_a))
+        */
+        log_debug("Flex A: " << _flex_a << ", Flex B: " << _flex_b << ", Flex H: " << _flex_h);
+        x_fac = ((-1.0 * ((2.0 / sqrt(3)) * ((double)_flex_b / (double)_flex_h))) * _scale_x);
+        y_fac = ((-1.0 * ((double)_flex_b / (double)_flex_h)) * _scale_y);
+        z_fac = ((1.0 / 3.0) * ((double)_flex_b / (double)_flex_a));
+        log_debug("FAC: (" << x_fac << "," << y_fac << "," << z_fac << ")");
+
+        tfd[0][0] = (-1.0 * x_fac);
+        tfd[0][1] = x_fac;
+        tfd[0][2] = 0.0;
+        tfd[1][0] = (0.5 * y_fac);
+        tfd[1][1] = (0.5 * y_fac);
+        tfd[1][2] = (-1.0 * y_fac);
+        tfd[2][0] = z_fac;
+        tfd[2][1] = z_fac;
+        tfd[2][2] = z_fac;   
+
+        // computes the inverse of a matrix m
+        double determinant = tfd[0][0] * (tfd[1][1] * tfd[2][2] - tfd[2][1] * tfd[1][2]) -
+                             tfd[0][1] * (tfd[1][0] * tfd[2][2] - tfd[1][2] * tfd[2][0]) +
+                             tfd[0][2] * (tfd[1][0] * tfd[2][1] - tfd[1][1] * tfd[2][0]);
+
+        double invdet = 1 / determinant;
+
+        ttd[0][0] = (tfd[1][1] * tfd[2][2] - tfd[2][1] * tfd[1][2]) * invdet;
+        ttd[0][1] = (tfd[0][2] * tfd[2][1] - tfd[0][1] * tfd[2][2]) * invdet;
+        ttd[0][2] = (tfd[0][1] * tfd[1][2] - tfd[0][2] * tfd[1][1]) * invdet;
+        ttd[1][0] = (tfd[1][2] * tfd[2][0] - tfd[1][0] * tfd[2][2]) * invdet;
+        ttd[1][1] = (tfd[0][0] * tfd[2][2] - tfd[0][2] * tfd[2][0]) * invdet;
+        ttd[1][2] = (tfd[1][0] * tfd[0][2] - tfd[0][0] * tfd[1][2]) * invdet;
+        ttd[2][0] = (tfd[1][0] * tfd[2][1] - tfd[2][0] * tfd[1][1]) * invdet;
+        ttd[2][1] = (tfd[2][0] * tfd[0][1] - tfd[0][0] * tfd[2][1]) * invdet;
+        ttd[2][2] = (tfd[0][0] * tfd[1][1] - tfd[1][0] * tfd[0][1]) * invdet;
+
+        log_debug("tfd: (" << tfd[0][0] << "," << tfd[0][1] << "," << tfd[0][2] << ")");
+        log_debug("tfd: (" << tfd[1][0] << "," << tfd[1][1] << "," << tfd[1][2] << ")");
+        log_debug("tfd: (" << tfd[2][0] << "," << tfd[2][1] << "," << tfd[2][2] << ")");
+        log_debug("ttd: (" << ttd[0][0] << "," << ttd[0][1] << "," << ttd[0][2] << ")");
+        log_debug("ttd: (" << ttd[1][0] << "," << ttd[1][1] << "," << ttd[1][2] << ")");
+        log_debug("ttd: (" << ttd[2][0] << "," << ttd[2][1] << "," << ttd[2][2] << ")");
 
         init_position();
     }
@@ -152,13 +197,63 @@ namespace Kinematics {
 
     bool OpenFlexure::cartesian_to_motors(float* target, plan_line_data_t* pl_data, float* position) {
         float dx, dy, dz;  // distances in each cartesian axis
-        float motor_angles[3];
+        float motor_angles[3] = { 0 };
 
         float seg_target[3];                    // The target of the current segment
         float feed_rate  = pl_data->feed_rate;  // save original feed rate
         bool  show_error = true;                // shows error once
 
         bool calc_ok = true;
+        
+        // auto n_axis = config->_axes->_numberAxis;
+        // log_debug("Target Values"); 
+        // for (int i=0; i < n_axis; i++) {
+        //     log_debug(target[i] << "," );
+        //     if ( (n_axis + 1) < n_axis)
+        //         log_debug(",");
+        // }
+        // log_debug("Position Values"); 
+        // for (int i=0; i < n_axis; i++) {
+        //     log_debug(position[i] << "," );
+        //     if ( (n_axis + 1) < n_axis)
+        //         log_debug(",");
+        // }
+        
+        // Check to see if an A, B or C axis value was provided and if so, act only on those.
+        // We have to track these values and do a comparison test. 
+        // I can probably use 'position' instead of motor_raw_offset
+        bool raw_move = false;        
+        // calc_ok = transform_cartesian_to_motors(motor_angles, position);  // Make sure motor angles reflect current location
+
+        // if ( fabs(target[A_AXIS] - position[A_AXIS]) >= 0.001 ) {
+        //     motor_angles[0] += (target[A_AXIS] - position[A_AXIS]);
+        //     raw_move = true;
+        // }
+        // if ( fabs(target[B_AXIS] - position[B_AXIS]) >= 0.001 ) {
+        //     motor_angles[1] += (target[B_AXIS] - position[B_AXIS]);
+        //     raw_move = true;
+        // }
+        // if ( fabs(target[C_AXIS] - position[C_AXIS]) >= 0.001 ) {
+        //     motor_angles[2] += (target[C_AXIS] - position[C_AXIS]);
+        //     raw_move = true;
+        // }
+        // if (raw_move) {
+        //     if(!mc_move_motors(motor_angles, pl_data)) {
+        //         return false;
+        //     }
+        //     return true;
+        // }
+
+        // Test Hash (Skip all this old Delta code below)
+        // target[X_AXIS] = position[X_AXIS] + ((target[X_AXIS] - position[X_AXIS]) * (1.0 / _scale_x));
+        // target[Y_AXIS] = position[Y_AXIS] + ((target[Y_AXIS] - position[Y_AXIS]) * (1.0 / _scale_y));
+        // calc_ok = transform_cartesian_to_motors(motor_angles, target);
+        // if (!mc_move_motors(motor_angles, pl_data)) {
+        //     return false;
+        // }
+        // return true;
+        //Test Hash
+
 
         if (target[Z_AXIS] > _max_z) {
             log_debug("Kinematics error. Target:" << target[Z_AXIS] << " exceeds max_z:" << _max_z);
@@ -219,9 +314,9 @@ namespace Kinematics {
             }
             if (pl_data->motion.rapidMotion) {
                 pl_data->feed_rate = feed_rate;
-            } else {
+            } else {  //This might be slowing down the feed rate too much during jogs commands, revisit
                 float delta_distance = three_axis_dist(motor_angles, last_angle);
-                pl_data->feed_rate   = (feed_rate * delta_distance / segment_dist);
+                pl_data->feed_rate   = (feed_rate * delta_distance / segment_dist);  
             }
 
             // mc_line() returns false if a jog is cancelled.
@@ -239,56 +334,23 @@ namespace Kinematics {
     }
 
     void OpenFlexure::motors_to_cartesian(float* cartesian, float* motors, int n_axis) {
-        //log_debug("motors_to_cartesian motors: (" << motors[0] << "," << motors[1] << "," << motors[2] << ")");
-        //log_info("motors_to_cartesian of_rf:" << of_rf << " of_re:" << of_re << " of_f:" << of_f << " of_e:" << of_e);
-
-        float t = (of_f - of_e) * tan30 / 2;
-
-        float y1 = -(t + of_rf * cos(motors[0]));
-        float z1 = -of_rf * sin(motors[0]);
-
-        float y2 = (t + of_rf * cos(motors[1])) * sin30;
-        float x2 = y2 * tan60;
-        float z2 = -of_rf * sin(motors[1]);
-
-        float y3 = (t + of_rf * cos(motors[2])) * sin30;
-        float x3 = -y3 * tan60;
-        float z3 = -of_rf * sin(motors[2]);
-
-        float dnm = (y2 - y1) * x3 - (y3 - y1) * x2;
-
-        float w1 = y1 * y1 + z1 * z1;
-        float w2 = x2 * x2 + y2 * y2 + z2 * z2;
-        float w3 = x3 * x3 + y3 * y3 + z3 * z3;
-
-        // x = (a1*z + b1)/dnm
-        float a1 = (z2 - z1) * (y3 - y1) - (z3 - z1) * (y2 - y1);
-        float b1 = -((w2 - w1) * (y3 - y1) - (w3 - w1) * (y2 - y1)) / 2.0;
-
-        // y = (a2*z + b2)/dnm;
-        float a2 = -(z2 - z1) * x3 + (z3 - z1) * x2;
-        float b2 = ((w2 - w1) * x3 - (w3 - w1) * x2) / 2.0;
-
-        // a*z^2 + b*z + c = 0
-        float a = a1 * a1 + a2 * a2 + dnm * dnm;
-        float b = 2 * (a1 * b1 + a2 * (b2 - y1 * dnm) - z1 * dnm * dnm);
-        float c = (b2 - y1 * dnm) * (b2 - y1 * dnm) + b1 * b1 + dnm * dnm * (z1 * z1 - of_re * of_re);
-
-        // discriminant
-        float d = b * b - (float)4.0 * a * c;
-        if (d < 0) {
-            log_warn("Forward Kinematics Error");
-            return;
-        }
-        cartesian[Z_AXIS] = -(float)0.5 * (b + sqrt(d)) / a;
-        cartesian[X_AXIS] = (a1 * cartesian[Z_AXIS] + b1) / dnm;
-        cartesian[Y_AXIS] = (a2 * cartesian[Z_AXIS] + b2) / dnm;
+        // log_debug("motors_to_cartesian: Motors(" << motors[0] << "," << motors[1] << "," << motors[2] << ")");
+        double result[3] = {
+            ((tfd[0][0] * (double) motors[Z_AXIS]) + (tfd[0][1] * (double) motors[Y_AXIS]) + (tfd[0][2] * (double) motors[X_AXIS])),
+            ((tfd[1][0] * (double) motors[Z_AXIS]) + (tfd[1][1] * (double) motors[Y_AXIS]) + (tfd[1][2] * (double) motors[X_AXIS])),
+            ((tfd[2][0] * (double) motors[Z_AXIS]) + (tfd[2][1] * (double) motors[Y_AXIS]) + (tfd[2][2] * (double) motors[X_AXIS]))
+        };
+        cartesian[X_AXIS] = (float) result[0];
+        cartesian[Y_AXIS] = (float) result[1];
+        cartesian[Z_AXIS] = (float) result[2];
+        // log_debug("motors_to_cartesian: Cartesian(" << cartesian[X_AXIS] << "," << cartesian[Y_AXIS] << "," << cartesian[Z_AXIS] << ")");
     }
 
     bool OpenFlexure::kinematics_homing(AxisMask& axisMask) {
         // only servos use custom homing. Steppers use limit switches
-        if (!_use_servos)
-            false;
+        // if (!_use_servos)
+        //     false;
+        return false; // We don't use servos
 
         auto axes   = config->_axes;
         auto n_axis = axes->_numberAxis;
@@ -305,27 +367,6 @@ namespace Kinematics {
         return true;  // signal main code that this handled all homing
     }
 
-    // helper functions, calculates angle theta1 (for YZ-pane)
-    bool OpenFlexure::delta_calcAngleYZ(float x0, float y0, float z0, float& theta) {
-        float y1 = -0.5 * 0.57735 * of_f;  // of_f/2 * tg 30
-        y0 -= 0.5 * 0.57735 * of_e;        // shift center to edge
-        // z = a + b*y
-        float a = (x0 * x0 + y0 * y0 + z0 * z0 + of_rf * of_rf - of_re * of_re - y1 * y1) / (2 * z0);
-        float b = (y1 - y0) / z0;
-        // discriminant
-        float d = -(a + b * y1) * (a + b * y1) + of_rf * (b * b * of_rf + of_rf);
-        if (d < 0) {
-            //log_warn("Kinematics: Target unreachable");
-            return false;
-        }                                                 // non-existing point
-        float yj = (y1 - a * b - sqrt(d)) / (b * b + 1);  // choosing outer point
-        float zj = a + b * yj;
-
-        theta = atan(-zj / (y1 - yj)) + ((yj > y1) ? M_PI : 0.0);
-
-        return true;
-    }
-
     void OpenFlexure::releaseMotors(AxisMask axisMask, MotorMask motors) {}
 
     bool OpenFlexure::transform_cartesian_to_motors(float* motors, float* cartesian) {
@@ -336,25 +377,22 @@ namespace Kinematics {
             log_debug("Kinematics transform error. Target:" << cartesian[Z_AXIS] << " exceeds max_z:" << _max_z);
             return false;
         }
+        // Matrix multiply cartesian by ttd (Transform to Delta) to arrive at motor positions
+        double result[3] = {
+            ((ttd[0][0] * (double) cartesian[X_AXIS]) + (ttd[0][1] * (double) cartesian[Y_AXIS]) + (ttd[0][2] * (double) cartesian[Z_AXIS])),
+            ((ttd[1][0] * (double) cartesian[X_AXIS]) + (ttd[1][1] * (double) cartesian[Y_AXIS]) + (ttd[1][2] * (double) cartesian[Z_AXIS])),
+            ((ttd[2][0] * (double) cartesian[X_AXIS]) + (ttd[2][1] * (double) cartesian[Y_AXIS]) + (ttd[2][2] * (double) cartesian[Z_AXIS]))
+        };
+        // log_debug("C2M: ttd: (" << ttd[0][0] << "," << ttd[0][1] << "," << ttd[0][2] << ")");
+        // log_debug("C2M: ttd: (" << ttd[1][0] << "," << ttd[1][1] << "," << ttd[1][2] << ")");
+        // log_debug("C2M: ttd: (" << ttd[2][0] << "," << ttd[2][1] << "," << ttd[2][2] << ")");
 
-        calc_ok = delta_calcAngleYZ(cartesian[X_AXIS], cartesian[Y_AXIS], cartesian[Z_AXIS], motors[0]);
-        if (!calc_ok) {
-            return calc_ok;
-        }
-
-        calc_ok = delta_calcAngleYZ(cartesian[X_AXIS] * cos120 + cartesian[Y_AXIS] * sin120,
-                                    cartesian[Y_AXIS] * cos120 - cartesian[X_AXIS] * sin120,
-                                    cartesian[Z_AXIS],
-                                    motors[1]);  // rotate coords to +120 deg
-        if (!calc_ok) {
-            return calc_ok;
-        }
-
-        calc_ok = delta_calcAngleYZ(cartesian[X_AXIS] * cos120 - cartesian[Y_AXIS] * sin120,
-                                    cartesian[Y_AXIS] * cos120 + cartesian[X_AXIS] * sin120,
-                                    cartesian[Z_AXIS],
-                                    motors[2]);  // rotate coords to -120 deg
-
+        motors[0] = (float) result[2];
+        motors[1] = (float) result[1];
+        motors[2] = (float) result[0];
+        calc_ok = true;
+        // log_debug("cartesian_to_motors: Cartesian (" << cartesian[X_AXIS] << "," << cartesian[Y_AXIS] << "," << cartesian[Z_AXIS] << ")");
+        // log_debug("cartesian_to_motors: Motors (" << motors[X_AXIS] << "," << motors[Y_AXIS] << "," << motors[Z_AXIS] << ")");
         return calc_ok;
     }
 
