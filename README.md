@@ -1,5 +1,14 @@
 <img src="https://github.com/bdring/FluidNC/wiki/images/logos/FluidNC.svg" width="600">
 
+## OpenFlexure Notes and Modifications
+Follow the same directions to build this as to build FluidNC. Make sure to checkout the OpenFlexure branch after cloning
+```
+git clone https://github.com/BitBangingBytes/FluidNC.git
+git checkout OpenFlexure
+```
+There is a sample Openflexure config file that uses an ESP32 Wifi module (ESP8266) with the stock motors. 
+Good luck!
+
 ## Introduction
 
 **FluidNC** is a CNC firmware optimized for the ESP32 controller. It is the next generation of firmware from the creators of Grbl_ESP32. It includes a web based UI and the flexibility to operate a wide variety of machine types. This includes the ability to control machines with multiple tool types such as laser plus spindle or a tool changer.  
