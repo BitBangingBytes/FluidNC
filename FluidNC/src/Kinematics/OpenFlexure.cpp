@@ -66,7 +66,7 @@ namespace Kinematics {
     double tfd[3][3];
 
     static float last_angle[MAX_N_AXIS]     = { 0.0 };  // A place to save the previous motor angles for distance/feed rate calcs
-    static float last_cartesian[MAX_N_AXIS] = { 0.0 };  // A place to save the previous motor angles for distance/feed rate calcs
+    // static float last_cartesian[MAX_N_AXIS] = { 0.0 };  // A place to save the previous motor angles for distance/feed rate calcs
 
     // Scale values are in relation to Z axis. First set step size (steps per mm) of Z axis so it moves 1mm 
     // Then observe X/Y axis and adjust scaling values until they also move 1mm.
@@ -149,11 +149,11 @@ namespace Kinematics {
     }
 
     void OpenFlexure::init_position() {
-        float angles[MAX_N_AXIS]    = { 0.0, 0.0, 0.0 };
-        float cartesian[MAX_N_AXIS] = { 0.0, 0.0, 0.0 };
+        float angles[MAX_N_AXIS]    = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+        float cartesian[MAX_N_AXIS] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
         // Calculate the Z offset at the arm zero angles ...
         // Z offset is the z distance from the motor axes to the end effector axes at zero angle
-        motors_to_cartesian(cartesian, angles, 3);  // Sets the cartesian values
+        motors_to_cartesian(cartesian, angles, MAX_N_AXIS);  // Sets the cartesian values
         log_info("  Z Offset:" << cartesian[Z_AXIS]);
     }
 
@@ -161,7 +161,7 @@ namespace Kinematics {
         if (!_softLimits)
             return false;
 
-        float motors[MAX_N_AXIS] = { 0.0, 0.0, 0.0 };
+        float motors[MAX_N_AXIS] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
 
         if (!transform_cartesian_to_motors(motors, cartesian)) {
             limit_error();
@@ -184,7 +184,7 @@ namespace Kinematics {
         if (!_softLimits)
             return;
 
-        float motors[MAX_N_AXIS] = { 0.0, 0.0, 0.0 };
+        float motors[MAX_N_AXIS] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
 
         // Temp fix
         // If the target is reachable do nothing
@@ -209,7 +209,10 @@ namespace Kinematics {
         bool  show_error = true;                // shows error once
 
         bool calc_ok = true;
-        
+
+        // auto axes   = config->_axes;
+        // auto n_axis = axes->_numberAxis;
+      
         // auto n_axis = config->_axes->_numberAxis;
         // log_debug("Target Values"); 
         // for (int i=0; i < n_axis; i++) {
@@ -228,24 +231,55 @@ namespace Kinematics {
         // We have to track these values and do a comparison test. 
         // I can probably use 'position' instead of motor_raw_offset
         bool raw_move = false;        
-        // calc_ok = transform_cartesian_to_motors(motor_angles, position);  // Make sure motor angles reflect current location
+        calc_ok = transform_cartesian_to_motors(motor_angles, position);  // Make sure motor angles reflect current location
 
-        // if ( fabs(target[A_AXIS] - position[A_AXIS]) >= 0.001 ) {
-        //     motor_angles[0] += (target[A_AXIS] - position[A_AXIS]);
-        //     raw_move = true;
-        // }
-        // if ( fabs(target[B_AXIS] - position[B_AXIS]) >= 0.001 ) {
-        //     motor_angles[1] += (target[B_AXIS] - position[B_AXIS]);
-        //     raw_move = true;
-        // }
-        // if ( fabs(target[C_AXIS] - position[C_AXIS]) >= 0.001 ) {
-        //     motor_angles[2] += (target[C_AXIS] - position[C_AXIS]);
-        //     raw_move = true;
-        // }
+        if ( fabs(target[A_AXIS] - position[A_AXIS]) >= 0.0001 ) {
+            motor_angles[0] += (target[A_AXIS] - position[A_AXIS]);
+            raw_move = true;
+            pl_data->feed_rate = feed_rate;
+            mc_move_motors(motor_angles, pl_data);
+            motors_to_cartesian(position, motor_angles,3);
+            memcpy(last_angle, motor_angles, sizeof(motor_angles));
+            calc_ok = transform_cartesian_to_motors(last_angle, position);
+            target[X_AXIS] = position[X_AXIS];
+            target[Y_AXIS] = position[Y_AXIS];
+            target[Z_AXIS] = position[Z_AXIS];
+        }
+        if ( fabs(target[B_AXIS] - position[B_AXIS]) >= 0.0001 ) {
+            motor_angles[1] += (target[B_AXIS] - position[B_AXIS]);
+            raw_move = true;
+            pl_data->feed_rate = feed_rate;
+            mc_move_motors(motor_angles, pl_data);
+            motors_to_cartesian(position, motor_angles,3);
+            memcpy(last_angle, motor_angles, sizeof(motor_angles));
+            calc_ok = transform_cartesian_to_motors(last_angle, position);
+            target[X_AXIS] = position[X_AXIS];
+            target[Y_AXIS] = position[Y_AXIS];
+            target[Z_AXIS] = position[Z_AXIS];            
+        }
+        if ( fabs(target[C_AXIS] - position[C_AXIS]) >= 0.0001 ) {
+            motor_angles[2] += (target[C_AXIS] - position[C_AXIS]);
+            raw_move = true;
+            pl_data->feed_rate = feed_rate;
+            mc_move_motors(motor_angles, pl_data);
+            motors_to_cartesian(position, motor_angles,3);            
+            memcpy(last_angle, motor_angles, sizeof(motor_angles));
+            calc_ok = transform_cartesian_to_motors(last_angle, position);
+            target[X_AXIS] = position[X_AXIS];
+            target[Y_AXIS] = position[Y_AXIS];
+            target[Z_AXIS] = position[Z_AXIS];            
+        }
+
         // if (raw_move) {
         //     if(!mc_move_motors(motor_angles, pl_data)) {
         //         return false;
         //     }
+        //     // config->_axes->set_disable(false);  
+        //     // for (int axis = 0; axis < 6; axis++) {
+        //     //     int32_t steps = mpos_to_steps(_homing_mpos, axis);
+        //     //     set_motor_steps(axis, steps);
+        //     // }
+        //     // log_debug("Raw move true");
         //     return true;
         // }
 
