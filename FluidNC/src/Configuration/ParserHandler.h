@@ -49,14 +49,11 @@ namespace Configuration {
                             section->group(*this);
                         } catch (const AssertionFailed& ex) {
                             // Log something meaningful to the user:
-                            log_error("Configuration error at "; for (auto it : _path) { ss << '/' << it; } ss << ": " << ex.msg);
-
-                            // Set the state to config alarm, so users can't run time machine.
-                            sys.state = State::ConfigAlarm;
+                            log_config_error("Configuration error at "; for (auto it : _path) { ss << '/' << it; } ss << ": " << ex.msg);
                         }
 
                         if (_parser._token._state == TokenState::Matching) {
-                            log_warn("Ignored key " << _parser.key());
+                            log_config_error("Ignored key " << _parser.key());
                         }
                         if (_parser._token._state == Configuration::TokenState::Matched) {
                             log_parser_verbose("Handled key " << _parser.key());
@@ -90,14 +87,14 @@ namespace Configuration {
             }
         }
 
-        void item(const char* name, uint32_t& value, uint32_t minValue, uint32_t maxValue) override {
+        void item(const char* name, uint32_t& value, const uint32_t minValue, const uint32_t maxValue) override {
             if (_parser.is(name)) {
                 value = _parser.uintValue();
                 constrain_with_message(value, minValue, maxValue, name);
             }
         }
 
-        void item(const char* name, int& value, EnumItem* e) override {
+        void item(const char* name, int& value, const EnumItem* e) override {
             if (_parser.is(name)) {
                 value = _parser.enumValue(e);
             }
@@ -109,7 +106,7 @@ namespace Configuration {
             }
         }
 
-        void item(const char* name, float& value, float minValue, float maxValue) override {
+        void item(const char* name, float& value, const float minValue, const float maxValue) override {
             if (_parser.is(name)) {
                 value = _parser.floatValue();
                 constrain_with_message(value, minValue, maxValue, name);
@@ -128,7 +125,7 @@ namespace Configuration {
             }
         }
 
-        void item(const char* name, std::string& value, int minLength, int maxLength) override {
+        void item(const char* name, std::string& value, const int minLength, const int maxLength) override {
             if (_parser.is(name)) {
                 value = _parser.stringValue();
             }

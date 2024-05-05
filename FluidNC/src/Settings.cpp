@@ -11,6 +11,7 @@
 #include <limits>
 #include <cstring>
 #include <vector>
+#include <charconv>
 #include <nvs.h>
 
 std::vector<Setting*> Setting::List __attribute__((init_priority(101))) = {};
@@ -20,13 +21,17 @@ bool anyState() {
     return false;
 }
 bool notIdleOrJog() {
-    return sys.state != State::Idle && sys.state != State::Jog;
+    return !state_is(State::Idle) && !state_is(State::Jog);
 }
 bool notIdleOrAlarm() {
-    return sys.state != State::Idle && sys.state != State::Alarm && sys.state != State::ConfigAlarm;
+    return !state_is(State::Idle) && !state_is(State::Alarm) && !state_is(State::ConfigAlarm);
 }
 bool cycleOrHold() {
-    return sys.state == State::Cycle || sys.state == State::Hold;
+    return state_is(State::Cycle) || state_is(State::Hold);
+}
+
+bool allowConfigStates() {
+    return !state_is(State::Idle) && !state_is(State::Alarm) && !state_is(State::ConfigAlarm) && !state_is(State::Critical);
 }
 
 Word::Word(type_t type, permissions_t permissions, const char* description, const char* grblName, const char* fullName) :
@@ -39,10 +44,8 @@ Command::Command(
     List.insert(List.begin(), this);
 }
 
-Setting::Setting(
-    const char* description, type_t type, permissions_t permissions, const char* grblName, const char* fullName, bool (*checker)(char*)) :
-    Word(type, permissions, description, grblName, fullName),
-    _checker(checker) {
+Setting::Setting(const char* description, type_t type, permissions_t permissions, const char* grblName, const char* fullName) :
+    Word(type, permissions, description, grblName, fullName) {
     List.insert(List.begin(), this);
 
     // NVS keys are limited to 15 characters, so if the setting name is longer
@@ -62,14 +65,11 @@ Setting::Setting(
     }
 }
 
-Error Setting::check(char* s) {
+Error Setting::check_state() {
     if (notIdleOrAlarm()) {
         return Error::IdleError;
     }
-    if (!_checker) {
-        return Error::Ok;
-    }
-    return _checker(s) ? Error::Ok : Error::InvalidValue;
+    return Error::Ok;
 }
 
 nvs_handle Setting::_handle = 0;
@@ -90,9 +90,8 @@ IntSetting::IntSetting(const char*   description,
                        int32_t       defVal,
                        int32_t       minVal,
                        int32_t       maxVal,
-                       bool (*checker)(char*) = NULL,
-                       bool currentIsNvm) :
-    Setting(description, type, permissions, grblName, name, checker),
+                       bool          currentIsNvm) :
+    Setting(description, type, permissions, grblName, name),
     _defaultValue(defVal), _currentValue(defVal), _minValue(minVal), _maxValue(maxVal), _currentIsNvm(currentIsNvm) {
     _storedValue = std::numeric_limits<int32_t>::min();
 }
@@ -118,15 +117,15 @@ void IntSetting::setDefault() {
     }
 }
 
-Error IntSetting::setStringValue(char* s) {
-    s         = trim(s);
-    Error err = check(s);
+Error IntSetting::setStringValue(std::string_view s) {
+    Error err = check_state();
     if (err != Error::Ok) {
         return err;
     }
-    char*   endptr;
-    int32_t convertedValue = strtol(s, &endptr, 10);
-    if (endptr == s || *endptr != '\0') {
+    trim(s);
+    int32_t convertedValue;
+    auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.length(), convertedValue);
+    if (ec != std::errc()) {
         return Error::BadNumberFormat;
     }
     if (convertedValue < _minValue || convertedValue > _maxValue) {
@@ -148,7 +147,6 @@ Error IntSetting::setStringValue(char* s) {
             _storedValue = convertedValue;
         }
     }
-    check(NULL);
     return Error::Ok;
 }
 
@@ -190,9 +188,8 @@ StringSetting::StringSetting(const char*   description,
                              const char*   name,
                              const char*   defVal,
                              int           min,
-                             int           max,
-                             bool (*checker)(char*)) :
-    Setting(description, type, permissions, grblName, name, checker) {
+                             int           max) :
+    Setting(description, type, permissions, grblName, name) {
     _defaultValue = defVal;
     _currentValue = defVal;
     _minLength    = min;
@@ -229,14 +226,14 @@ void StringSetting::setDefault() {
     }
 }
 
-Error StringSetting::setStringValue(char* s) {
-    if (_minLength && _maxLength && (strlen(s) < size_t(_minLength) || strlen(s) > size_t(_maxLength))) {
-        log_error("Setting length error");
-        return Error::BadNumberFormat;
-    }
-    Error err = check(s);
+Error StringSetting::setStringValue(std::string_view s) {
+    Error err = check_state();
     if (err != Error::Ok) {
         return err;
+    }
+    if (_minLength && _maxLength && (s.length() < size_t(_minLength) || s.length() > size_t(_maxLength))) {
+        log_error("Setting length error");
+        return Error::BadNumberFormat;
     }
     _currentValue = s;
     if (_storedValue != _currentValue) {
@@ -250,23 +247,14 @@ Error StringSetting::setStringValue(char* s) {
             _storedValue = _currentValue;
         }
     }
-    check(NULL);
     return Error::Ok;
 }
 
-static bool isPassword(bool (*_checker)(char*)) {
-    if (_checker == (bool (*)(char*))WebUI::WiFiConfig::isPasswordValid) {
-        return true;
-    }
-    return _checker == (bool (*)(char*))WebUI::COMMANDS::isLocalPasswordValid;
-}
-
 const char* StringSetting::getDefaultString() {
-    // If the string is a password do not display it
-    return (_checker && isPassword(_checker)) ? "********" : _defaultValue.c_str();
+    return _defaultValue.c_str();
 }
 const char* StringSetting::getStringValue() {
-    return (_checker && isPassword(_checker)) ? "********" : get();
+    return get();
 }
 
 void StringSetting::addWebui(WebUI::JSONencoder* j) {
@@ -277,17 +265,12 @@ void StringSetting::addWebui(WebUI::JSONencoder* j) {
     j->end_object();
 }
 
-typedef std::map<const char*, int8_t, cmp_str> enum_opt_t;
+// typedef std::map<const char*, int8_t, cmp_str> enum_opt_t;
+// typedef std::map<const char*, int8_t, std::less<>> enum_opt_t;
 
-EnumSetting::EnumSetting(const char*   description,
-                         type_t        type,
-                         permissions_t permissions,
-                         const char*   grblName,
-                         const char*   name,
-                         int8_t        defVal,
-                         enum_opt_t*   opts,
-                         bool (*checker)(char*) = NULL) :
-    Setting(description, type, permissions, grblName, name, checker),
+EnumSetting::EnumSetting(
+    const char* description, type_t type, permissions_t permissions, const char* grblName, const char* name, int8_t defVal, const enum_opt_t* opts) :
+    Setting(description, type, permissions, grblName, name),
     _defaultValue(defVal), _options(opts) {}
 
 void EnumSetting::load() {
@@ -311,25 +294,27 @@ void EnumSetting::setDefault() {
 // either with the string name or the numeric value.
 // This is necessary for WebUI, which uses the number
 // for setting.
-Error EnumSetting::setStringValue(char* s) {
-    s         = trim(s);
-    Error err = check(s);
+Error EnumSetting::setStringValue(std::string_view s) {
+    Error err = check_state();
     if (err != Error::Ok) {
         return err;
     }
-    enum_opt_t::iterator it = _options->find(s);
+    trim(s);
+    std::string          str(s);
+    enum_opt_t::const_iterator it = _options->find(str.c_str());
     if (it == _options->end()) {
         // If we don't find the value in keys, look for it in the numeric values
 
         // Disallow empty string
-        if (!s || !*s) {
+        if (!s.length()) {
             showList();
             return Error::BadNumberFormat;
         }
-        char*   endptr;
-        uint8_t num = uint8_t(strtol(s, &endptr, 10));
+        char* endptr;
+        int   num;
         // Disallow non-numeric characters in string
-        if (*endptr) {
+        auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.length(), num);
+        if (ec != std::errc()) {
             showList();
             return Error::BadNumberFormat;
         }
@@ -353,12 +338,11 @@ Error EnumSetting::setStringValue(char* s) {
             _storedValue = _currentValue;
         }
     }
-    check(NULL);
     return Error::Ok;
 }
 
 const char* EnumSetting::enumToString(int8_t value) {
-    for (enum_opt_t::iterator it = _options->begin(); it != _options->end(); it++) {
+    for (enum_opt_t::const_iterator it = _options->begin(); it != _options->end(); it++) {
         if (it->second == value) {
             return it->first;
         }
@@ -375,7 +359,7 @@ const char* EnumSetting::getStringValue() {
 
 void EnumSetting::showList() {
     std::string optList = "";
-    for (enum_opt_t::iterator it = _options->begin(); it != _options->end(); it++) {
+    for (enum_opt_t::const_iterator it = _options->begin(); it != _options->end(); it++) {
         optList = optList + " " + it->first;
     }
     log_info("Valid options:" << optList);
@@ -387,7 +371,7 @@ void EnumSetting::addWebui(WebUI::JSONencoder* j) {
     }
     j->begin_webui(getName(), getName(), "B", get());
     j->begin_array("O");
-    for (enum_opt_t::iterator it = _options->begin(); it != _options->end(); it++) {
+    for (enum_opt_t:: const_iterator it = _options->begin(); it != _options->end(); it++) {
         j->begin_object();
         j->member(it->first, it->second);
         j->end_object();
@@ -396,7 +380,7 @@ void EnumSetting::addWebui(WebUI::JSONencoder* j) {
     j->end_object();
 }
 
-Error UserCommand::action(char* value, WebUI::AuthenticationLevel auth_level, Channel& out) {
+Error UserCommand::action(const char* value, WebUI::AuthenticationLevel auth_level, Channel& out) {
     if (_cmdChecker && _cmdChecker()) {
         return Error::IdleError;
     }
@@ -432,25 +416,15 @@ void Coordinates::set(float value[MAX_N_AXIS]) {
     nvs_set_blob(Setting::_handle, _name, _currentValue, sizeof(_currentValue));
 }
 
-IPaddrSetting::IPaddrSetting(const char*   description,
-                             type_t        type,
-                             permissions_t permissions,
-                             const char*   grblName,
-                             const char*   name,
-                             uint32_t      defVal,
-                             bool (*checker)(char*) = NULL) :
-    Setting(description, type, permissions, grblName, name, checker)  // There are no GRBL IP settings.
+IPaddrSetting::IPaddrSetting(
+    const char* description, type_t type, permissions_t permissions, const char* grblName, const char* name, uint32_t defVal) :
+    Setting(description, type, permissions, grblName, name)  // There are no GRBL IP settings.
     ,
     _defaultValue(defVal), _currentValue(defVal) {}
 
-IPaddrSetting::IPaddrSetting(const char*   description,
-                             type_t        type,
-                             permissions_t permissions,
-                             const char*   grblName,
-                             const char*   name,
-                             const char*   defVal,
-                             bool (*checker)(char*) = NULL) :
-    Setting(description, type, permissions, grblName, name, checker) {
+IPaddrSetting::IPaddrSetting(
+    const char* description, type_t type, permissions_t permissions, const char* grblName, const char* name, const char* defVal) :
+    Setting(description, type, permissions, grblName, name) {
     IPAddress ipaddr;
     if (ipaddr.fromString(defVal)) {
         _defaultValue = ipaddr;
@@ -477,14 +451,14 @@ void IPaddrSetting::setDefault() {
     }
 }
 
-Error IPaddrSetting::setStringValue(char* s) {
-    s         = trim(s);
-    Error err = check(s);
+Error IPaddrSetting::setStringValue(std::string_view s) {
+    Error err = check_state();
     if (err != Error::Ok) {
         return err;
     }
-    IPAddress ipaddr;
-    if (!ipaddr.fromString(s)) {
+    IPAddress   ipaddr;
+    std::string str(s);
+    if (!ipaddr.fromString(str.c_str())) {
         return Error::InvalidValue;
     }
     _currentValue = ipaddr;
@@ -498,7 +472,6 @@ Error IPaddrSetting::setStringValue(char* s) {
             _storedValue = _currentValue;
         }
     }
-    check(NULL);
     return Error::Ok;
 }
 

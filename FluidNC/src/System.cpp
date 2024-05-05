@@ -23,7 +23,7 @@ void system_reset() {
     State prior_state = sys.state;
     bool  prior_abort = sys.abort;
     memset(&sys, 0, sizeof(system_t));  // Clear system struct variable.
-    sys.state             = prior_state;
+    set_state(prior_state);
     sys.abort             = prior_abort;
     sys.f_override        = FeedOverride::Default;          // Set to 100%
     sys.r_override        = RapidOverride::Default;         // Set to 100%
@@ -74,15 +74,18 @@ int32_t get_axis_motor_steps(size_t axis) {
     return m ? m->_steps : 0;
 }
 
-int32_t* get_motor_steps() {
-    static int32_t motor_steps[MAX_N_AXIS];
-
+void get_motor_steps(int32_t* motor_steps) {
     auto axes   = config->_axes;
     auto n_axis = axes->_numberAxis;
     for (size_t axis = 0; axis < n_axis; axis++) {
         auto m            = axes->_axis[axis]->_motors[0];
         motor_steps[axis] = m ? m->_steps : 0;
     }
+}
+int32_t* get_motor_steps() {
+    static int32_t motor_steps[MAX_N_AXIS];
+
+    get_motor_steps(motor_steps);
     return motor_steps;
 }
 
@@ -117,8 +120,16 @@ std::map<State, const char*> StateName = {
     { State::SafetyDoor, "SafetyDoor" },
     { State::Sleep, "Sleep" },
     { State::ConfigAlarm, "ConfigAlarm" },
+    { State::Critical, "Critical" },
 };
 
+void set_state(State s) {
+    sys.state = s;
+}
+bool state_is(State s) {
+    return sys.state == s;
+}
+
 bool inMotionState() {
-    return sys.state == State::Cycle || sys.state == State::Homing || sys.state == State::Jog;
+    return state_is(State::Cycle) || state_is(State::Homing) || state_is(State::Jog);
 }

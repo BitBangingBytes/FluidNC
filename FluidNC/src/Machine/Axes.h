@@ -29,8 +29,12 @@ namespace Machine {
 
         static AxisMask homingMask;
 
+        static bool disabled;
+
         Pin _sharedStepperDisable;
         Pin _sharedStepperReset;
+
+        uint32_t _homing_runs = 2;  // Number of Approach/Pulloff cycles
 
         inline char axisName(int index) { return index < MAX_N_AXIS ? _names[index] : '?'; }  // returns axis letter
 
@@ -45,6 +49,8 @@ namespace Machine {
         // is helpful for some motors that need this info, as well as debug information.
         size_t findAxisIndex(const MotorDrivers::MotorDriver* const motor) const;
         size_t findAxisMotor(const MotorDrivers::MotorDriver* const motor) const;
+
+        MotorMask hardLimitMask();
 
         inline bool hasHardLimits() const {
             for (int axis = 0; axis < _numberAxis; ++axis) {
@@ -85,4 +91,4 @@ namespace Machine {
         ~Axes();
     };
 }
-extern EnumItem axisType[];
+extern const EnumItem axisType[];

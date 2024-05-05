@@ -71,7 +71,12 @@ void OLED::init() {
     _oled = new SSD1306_I2C(_address, _geometry, config->_i2c[_i2c_num], 400000);
     _oled->init();
 
-    _oled->flipScreenVertically();
+    if (_flip) {
+        _oled->flipScreenVertically();
+    }
+    if (_mirror) {
+        _oled->mirrorScreen();
+    }
     _oled->setTextAlignment(TEXT_ALIGN_LEFT);
 
     _oled->clear();
@@ -193,7 +198,7 @@ void OLED::show_radio_info() {
 void OLED::parse_numbers(std::string s, float* nums, int maxnums) {
     size_t pos     = 0;
     size_t nextpos = -1;
-    size_t i;
+    size_t i       = 0;
     do {
         if (i >= maxnums) {
             return;

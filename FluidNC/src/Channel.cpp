@@ -78,7 +78,7 @@ uint32_t Channel::setReportInterval(uint32_t ms) {
     return actual;
 }
 static bool motionState() {
-    return sys.state == State::Cycle || sys.state == State::Homing || sys.state == State::Jog;
+    return state_is(State::Cycle) || state_is(State::Homing) || state_is(State::Jog);
 }
 
 void Channel::autoReportGCodeState() {
@@ -103,18 +103,18 @@ void Channel::autoReportGCodeState() {
 }
 void Channel::autoReport() {
     if (_reportInterval) {
-        auto probeState = config->_probe->get_state();
-        if (probeState != _lastProbe) {
+        auto thisProbeState = config->_probe->get_state();
+        if (thisProbeState != _lastProbe) {
             report_recompute_pin_string();
         }
-        if (_reportWco || sys.state != _lastState || probeState != _lastProbe || _lastPinString != report_pin_string ||
+        if (_reportWco || !state_is(_lastState) || thisProbeState != _lastProbe || _lastPinString != report_pin_string ||
             (motionState() && (int32_t(xTaskGetTickCount()) - _nextReportTime) >= 0)) {
             if (_reportWco) {
                 report_wco_counter = 0;
             }
             _reportWco     = false;
             _lastState     = sys.state;
-            _lastProbe     = probeState;
+            _lastProbe     = thisProbeState;
             _lastPinString = report_pin_string;
 
             _nextReportTime = xTaskGetTickCount() + _reportInterval;
@@ -153,13 +153,13 @@ void Channel::handleRealtimeCharacter(uint8_t ch) {
 
     _active = true;
     if (cmd == PinACK) {
-        log_debug("ACK");
+        // log_debug("ACK");
         _ackwait = false;
         return;
     }
     if (cmd == PinNAK) {
         log_error("Channel device rejected config");
-        log_debug("NAK");
+        // log_debug("NAK");
         _ackwait = false;
         return;
     }
@@ -257,11 +257,12 @@ void Channel::ack(Error status) {
     // With verbose errors, the message text is displayed instead of the number.
     // Grbl 0.9 used to display the text, while Grbl 1.1 switched to the number.
     // Many senders support both formats.
-    LogStream msg(*this, "error:");
-    if (config->_verboseErrors) {
-        msg << errorString(status);
-    } else {
+    {
+        LogStream msg(*this, "error:");
         msg << static_cast<int>(status);
+    }
+    if (config->_verboseErrors) {
+        log_error_to(*this, errorString(status));
     }
 }
 

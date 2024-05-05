@@ -51,7 +51,7 @@ bool mc_move_motors(float* target, plan_line_data_t* pl_data) {
     mc_pl_data_inflight = pl_data;
 
     // If in check gcode mode, prevent motion by blocking planner. Soft limits still work.
-    if (sys.state == State::CheckMode) {
+    if (state_is(State::CheckMode)) {
         mc_pl_data_inflight = NULL;
         return submitted_result;  // Bail, if system abort.
     }
@@ -267,14 +267,14 @@ void mc_arc(float*            target,
 
 // Execute dwell in seconds.
 bool mc_dwell(int32_t milliseconds) {
-    if (milliseconds <= 0 || sys.state == State::CheckMode) {
+    if (milliseconds <= 0 || state_is(State::CheckMode)) {
         return false;
     }
     protocol_buffer_synchronize();
     return delay_msec(milliseconds, DwellMode::Dwell);
 }
 
-volatile ProbeState probeState;
+volatile bool probing;
 
 bool probe_succeeded = false;
 
@@ -286,7 +286,7 @@ GCUpdatePos mc_probe_cycle(float* target, plan_line_data_t* pl_data, bool away, 
         return GCUpdatePos::None;
     }
     // TODO: Need to update this cycle so it obeys a non-auto cycle start.
-    if (sys.state == State::CheckMode) {
+    if (state_is(State::CheckMode)) {
         return config->_probe->_check_mode_start ? GCUpdatePos::None : GCUpdatePos::Target;
     }
     // Finish all queued commands and empty planner buffer before starting probe cycle.
@@ -311,7 +311,7 @@ GCUpdatePos mc_probe_cycle(float* target, plan_line_data_t* pl_data, bool away, 
     // Setup and queue probing motion. Auto cycle-start should not start the cycle.
     mc_linear(target, pl_data, gc_state.position);
     // Activate the probing state monitor in the stepper module.
-    probeState = ProbeState::Active;
+    probing = true;
     // Perform probing cycle. Wait here until probe is triggered or motion completes.
     protocol_send_event(&cycleStartEvent);
     do {
@@ -320,23 +320,23 @@ GCUpdatePos mc_probe_cycle(float* target, plan_line_data_t* pl_data, bool away, 
             config->_stepping->endLowLatency();
             return GCUpdatePos::None;  // Check for system abort
         }
-    } while (sys.state != State::Idle);
+    } while (!state_is(State::Idle));
 
     config->_stepping->endLowLatency();
 
     // Probing cycle complete!
     // Set state variables and error out, if the probe failed and cycle with error is enabled.
-    if (probeState == ProbeState::Active) {
+    if (probing) {
         if (no_error) {
-            copyAxes(probe_steps, get_motor_steps());
+            get_motor_steps(probe_steps);
         } else {
             send_alarm(ExecAlarm::ProbeFailContact);
         }
     } else {
         probe_succeeded = true;  // Indicate to system the probing cycle completed successfully.
     }
-    probeState = ProbeState::Off;  // Ensure probe state monitor is disabled.
-    protocol_execute_realtime();   // Check and execute run-time commands
+    probing = false;              // Ensure probe state monitor is disabled.
+    protocol_execute_realtime();  // Check and execute run-time commands
     // Reset the stepper and planner buffers to remove the remainder of the probe motion.
     Stepper::reset();      // Reset step segment buffer.
     plan_reset();          // Reset planner buffer. Zero planner positions. Ensure probing motion is cleared.

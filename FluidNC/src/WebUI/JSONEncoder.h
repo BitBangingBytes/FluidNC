@@ -10,7 +10,7 @@ namespace WebUI {
     private:
         static const int MAX_JSON_LEVEL = 16;
 
-        bool pretty;
+        bool _encapsulate = false;
         int  level;
         int  count[MAX_JSON_LEVEL];
         void add(char c);
@@ -23,9 +23,6 @@ namespace WebUI {
 
         void quoted(const char* s);
 
-        // begin_member() starts the creation of a member.
-        void begin_member(const char* tag);
-
         std::string linebuf;
 
         std::string* _str     = nullptr;
@@ -36,9 +33,9 @@ namespace WebUI {
         void flush();
 
     public:
-        // Constructor; set _pretty true for pretty printing
-        JSONencoder(bool pretty, Channel* channel);
-        JSONencoder(bool pretty, std::string* str);
+        // Constructor; set _encapsulate true for [MSG:JSON: ,,,] encapsulation
+        JSONencoder(bool encapsulate, Channel* channel);
+        JSONencoder(std::string* str);
 
         // begin() starts the encoding process.
         void begin();
@@ -48,6 +45,9 @@ namespace WebUI {
         void end();
 
         void string(const char* s);
+
+        // begin_member() starts the creation of a member.
+        void begin_member(const char* tag);
 
         // member() creates a "tag":"value" element
         void member(const char* tag, const char* value);
@@ -69,6 +69,8 @@ namespace WebUI {
         // Begins the creation of a member whose value is an object.
         // Call end_object() to close the member
         void begin_member_object(const char* tag);
+
+        void verbatim(const std::string& s);
 
         // The begin_webui() methods are specific to Esp3D_WebUI
         // WebUI sends JSON objects to the UI to generate configuration
